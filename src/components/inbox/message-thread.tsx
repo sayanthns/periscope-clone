@@ -18,12 +18,19 @@ import {
   ChevronDown,
   UserPlus,
   Check,
-  Clock,
   ArrowLeft,
   RefreshCw,
+  MoreVertical,
+  Pin,
+  PinOff,
+  BellOff,
+  Bell,
+  Archive,
+  ArchiveRestore,
+  MailWarning,
+  Trash2,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,8 +38,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
+import { LabelPicker } from "./label-picker";
+import { useMaskedPhone } from "@/hooks/use-masked-phone";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
 import { TemplatePicker } from "./template-picker";
@@ -119,17 +135,10 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Closed", value: "closed", color: "text-slate-400" },
 ];
 
-/**
- * WhatsApp-style doodle background applied to the chat area (both the
- * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
- *
- * Defined once at module scope so the two render paths can't drift —
- * if we ever switch the asset, both spots update together.
- */
-const DOODLE_BG_CLASSES =
-  "bg-slate-950 bg-[url('/inbox-doodle.svg')] bg-repeat";
+const DOODLE_BG_CLASSES = "bg-slate-950";
+
+/** Messages fetched per page; older pages load on scroll-to-top. */
+const PAGE_SIZE = 50;
 
 export function MessageThread({
   conversation,
@@ -145,8 +154,239 @@ export function MessageThread({
   onRefresh,
 }: MessageThreadProps) {
   const { user } = useAuth();
+  const { maskPhone } = useMaskedPhone();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ── Scrolling state ────────────────────────────────────────
+  // Pagination: PAGE_SIZE messages per fetch; older pages load when the
+  // user scrolls near the top. `nearBottomRef` gates auto-scroll so
+  // reading history isn't interrupted by incoming messages.
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showJumpButton, setShowJumpButton] = useState(false);
+  const [fetchingHistory, setFetchingHistory] = useState(false);
+  const nearBottomRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+
+  // Pull older messages from WhatsApp itself (backfill beyond what initial
+  // sync gave). Fetched messages stream in async via history-sync, so we
+  // poll-refetch a couple of times after requesting.
+  const fetchOlderFromWhatsApp = useCallback(async () => {
+    if (!conversation || fetchingHistory) return;
+    setFetchingHistory(true);
+    try {
+      const res = await fetch("/api/whatsapp/fetch-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversation.id }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload?.error || "Couldn't fetch history (is WhatsApp connected?)");
+        return;
+      }
+      toast.success("Requested older messages — they'll appear shortly");
+      // Give WhatsApp a moment to stream history-sync, then refresh.
+      setTimeout(() => onRefresh?.(), 3500);
+      setTimeout(() => onRefresh?.(), 8000);
+    } catch {
+      toast.error("Network error fetching history");
+    } finally {
+      setFetchingHistory(false);
+    }
+  }, [conversation, fetchingHistory, onRefresh]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversation || loadingOlderRef.current || !hasMoreOlder) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversation.id)
+        .lt("created_at", oldest.created_at)
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
+      if (error || !data) return;
+
+      setHasMoreOlder(data.length === PAGE_SIZE);
+      if (data.length > 0) {
+        const el = scrollRef.current;
+        const prevHeight = el?.scrollHeight ?? 0;
+        onMessagesLoaded([...data.reverse(), ...messages]);
+        // Preserve viewport position after prepend
+        requestAnimationFrame(() => {
+          if (el) el.scrollTop = el.scrollHeight - prevHeight + el.scrollTop;
+        });
+      }
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [conversation, hasMoreOlder, messages, onMessagesLoaded]);
+
+  const handleThreadScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    nearBottomRef.current = distanceFromBottom < 150;
+    setShowJumpButton(distanceFromBottom > 300);
+    if (el.scrollTop < 100) {
+      void loadOlderMessages();
+    }
+  }, [loadOlderMessages]);
+
+  const jumpToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // ── Per-chat options (pin / mute / archive / unread / delete) ──
+  // Local mirror so the header reflects toggles instantly; the list
+  // catches up via realtime / next refetch.
+  const [chatFlags, setChatFlags] = useState({ pinned: false, muted: false, archived: false });
+  useEffect(() => {
+    setChatFlags({
+      pinned: conversation?.pinned ?? false,
+      muted: conversation?.muted ?? false,
+      archived: conversation?.archived ?? false,
+    });
+  }, [conversation?.id, conversation?.pinned, conversation?.muted, conversation?.archived]);
+
+  const updateChatFlag = useCallback(
+    async (field: "pinned" | "muted" | "archived", value: boolean) => {
+      if (!conversation) return;
+      setChatFlags((prev) => ({ ...prev, [field]: value }));
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("conversations")
+        .update({ [field]: value })
+        .eq("id", conversation.id);
+      if (error) {
+        setChatFlags((prev) => ({ ...prev, [field]: !value }));
+        toast.error(`Failed: ${error.message}`);
+        return;
+      }
+      toast.success(
+        field === "pinned" ? (value ? "Pinned" : "Unpinned")
+        : field === "muted" ? (value ? "Muted" : "Unmuted")
+        : value ? "Archived" : "Unarchived",
+      );
+      if (field === "archived" && value) onBack?.();
+    },
+    [conversation, onBack],
+  );
+
+  const markUnread = useCallback(async () => {
+    if (!conversation) return;
+    const supabase = createClient();
+    await supabase
+      .from("conversations")
+      .update({ unread_count: 1 })
+      .eq("id", conversation.id);
+    toast.success("Marked as unread");
+    onBack?.();
+  }, [conversation, onBack]);
+
+  const deleteChat = useCallback(async () => {
+    if (!conversation) return;
+    if (!window.confirm("Delete this chat and all its messages? This cannot be undone.")) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", conversation.id);
+    if (error) {
+      toast.error(`Delete failed: ${error.message}`);
+      return;
+    }
+    toast.success("Chat deleted");
+    onBack?.();
+  }, [conversation, onBack]);
+
+  // ── Forward + delete-for-everyone ──────────────────────────
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null);
+  const [forwardTargets, setForwardTargets] = useState<Conversation[]>([]);
+  const [forwardSearch, setForwardSearch] = useState("");
+  const [forwarding, setForwarding] = useState(false);
+
+  useEffect(() => {
+    if (!forwardMsg) return;
+    const supabase = createClient();
+    supabase
+      .from("conversations")
+      .select("*, contact:contacts(*)")
+      .order("last_message_at", { ascending: false })
+      .limit(100)
+      .then(({ data }) => setForwardTargets((data as Conversation[]) ?? []));
+  }, [forwardMsg]);
+
+  const doForward = useCallback(
+    async (target: Conversation) => {
+      if (!forwardMsg || forwarding) return;
+      setForwarding(true);
+      try {
+        const isMedia = ["image", "video", "document", "audio"].includes(
+          forwardMsg.content_type,
+        );
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: target.id,
+            message_type: isMedia ? forwardMsg.content_type : "text",
+            content_text: forwardMsg.content_text ?? undefined,
+            media_url: isMedia ? forwardMsg.media_url : undefined,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(payload?.error || "Forward failed");
+          return;
+        }
+        toast.success(
+          `Forwarded to ${target.group_name ?? target.contact?.name ?? target.contact?.phone ?? "chat"}`,
+        );
+        setForwardMsg(null);
+        setForwardSearch("");
+      } finally {
+        setForwarding(false);
+      }
+    },
+    [forwardMsg, forwarding],
+  );
+
+  const deleteForEveryone = useCallback(
+    async (msg: Message) => {
+      if (!conversation) return;
+      if (!window.confirm("Delete this message for everyone?")) return;
+      const res = await fetch("/api/whatsapp/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: conversation.id,
+          message_db_id: msg.id,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload?.error || "Delete failed");
+        return;
+      }
+      onUpdateMessage(msg.id, {
+        content_text: "🚫 You deleted this message",
+        content_type: "text",
+        media_url: undefined,
+      });
+      toast.success("Deleted for everyone");
+    },
+    [conversation, onUpdateMessage],
+  );
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
@@ -252,18 +492,29 @@ export function MessageThread({
     (async () => {
       setLoading(true);
 
+      // Last page only — older messages lazy-load when the user scrolls
+      // to the top (see handleScroll / loadOlderMessages below).
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
 
       if (cancelled) return;
 
       if (error) {
         console.error("Failed to fetch messages:", error);
       } else {
-        onMessagesLoadedRef.current(data ?? []);
+        const page = (data ?? []).reverse();
+        setHasMoreOlder((data ?? []).length === PAGE_SIZE);
+        onMessagesLoadedRef.current(page);
+        // Initial load → jump to bottom after paint
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        });
       }
 
       if (!cancelled) setLoading(false);
@@ -406,18 +657,28 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
+
+    // Blue ticks on WhatsApp — tell the sender we've read their messages.
+    // Best-effort, fire-and-forget.
+    void fetch("/api/whatsapp/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch(() => {});
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // Smart auto-scroll: follow new messages ONLY when the user is already
+  // near the bottom. While reading history (scrolled up), incoming
+  // messages must not yank the viewport — the jump button is the way back.
   useEffect(() => {
-    if (scrollRef.current) {
+    if (nearBottomRef.current && scrollRef.current) {
       const el = scrollRef.current;
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
 
   const handleSend = useCallback(
-    async (text: string, replyToId?: string) => {
+    async (text: string, replyToId?: string, isNote?: boolean, mentionedJids?: string[]) => {
       if (!conversation) return;
 
       const tempId = `temp-${Date.now()}`;
@@ -426,7 +687,7 @@ export function MessageThread({
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversation.id,
-        sender_type: "agent",
+        sender_type: isNote ? "note" : "agent",
         content_type: "text",
         content_text: text,
         status: "sending",
@@ -442,9 +703,10 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            message_type: "text",
+            message_type: isNote ? "note" : "text",
             content_text: text,
             reply_to_message_id: replyToId,
+            mentioned_jids: mentionedJids,
           }),
         });
 
@@ -709,7 +971,11 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const isGroupConv = conversation.is_group === true;
+  const displayName = isGroupConv
+    ? (conversation.group_name ?? contact.name ?? "Group")
+    : (contact.name || maskPhone(contact.phone));
+  const subLabel = isGroupConv ? "WhatsApp Group" : maskPhone(contact.phone);
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -721,10 +987,14 @@ export function MessageThread({
     : "Assign";
 
   return (
-    <div className={cn("flex flex-1 flex-col", DOODLE_BG_CLASSES)}>
+    // h-full + min-h-0: bound this column to the parent row's height so the
+    // inner messages area can actually overflow-scroll instead of the whole
+    // thread growing past the viewport (which the page clips → no scrollbar).
+    <div className={cn("flex h-full min-h-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
       {/* Header — solid bg-slate-900 sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 px-3 py-3 sm:px-4">
+          name/avatar/dropdowns stay legible. shrink-0 keeps it from being
+          squeezed when the message list is tall. */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
@@ -743,20 +1013,9 @@ export function MessageThread({
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-white">{displayName}</h2>
-            <p className="truncate text-xs text-slate-400">{contact.phone}</p>
+            <p className="truncate text-xs text-slate-400">{subLabel}</p>
           </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-slate-700 text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+          {/* Session timer removed — Baileys has no 24-hour session window */}
         </div>
 
         <div className="flex items-center gap-2">
@@ -781,6 +1040,9 @@ export function MessageThread({
               />
             </button>
           )}
+
+          {/* Chat labels */}
+          <LabelPicker conversationId={conversation.id} />
 
           {/* Status dropdown */}
           <DropdownMenu>
@@ -861,11 +1123,64 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Chat options (pin / mute / archive / unread / delete) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              title="Chat options"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="border-slate-700 bg-slate-800">
+              <DropdownMenuItem
+                onClick={() => updateChatFlag("pinned", !chatFlags.pinned)}
+                className="gap-2 text-sm text-slate-300"
+              >
+                {chatFlags.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                {chatFlags.pinned ? "Unpin chat" : "Pin chat"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => updateChatFlag("muted", !chatFlags.muted)}
+                className="gap-2 text-sm text-slate-300"
+              >
+                {chatFlags.muted ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+                {chatFlags.muted ? "Unmute" : "Mute"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={markUnread}
+                className="gap-2 text-sm text-slate-300"
+              >
+                <MailWarning className="h-3.5 w-3.5" />
+                Mark as unread
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => updateChatFlag("archived", !chatFlags.archived)}
+                className="gap-2 text-sm text-slate-300"
+              >
+                {chatFlags.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                {chatFlags.archived ? "Unarchive" : "Archive"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-slate-700" />
+              <DropdownMenuItem
+                onClick={deleteChat}
+                className="gap-2 text-sm text-red-400"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete chat
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={handleThreadScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -879,6 +1194,26 @@ export function MessageThread({
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Older-messages loader strip */}
+            {loadingOlder && (
+              <div className="flex items-center justify-center py-1">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            )}
+            {!hasMoreOlder && messages.length > 0 && (
+              <div className="flex flex-col items-center gap-1 py-2">
+                <button
+                  onClick={fetchOlderFromWhatsApp}
+                  disabled={fetchingHistory}
+                  className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-[11px] text-slate-300 transition-colors hover:bg-slate-700 hover:text-white disabled:opacity-50"
+                >
+                  {fetchingHistory ? "Fetching from WhatsApp…" : "Load older messages from WhatsApp"}
+                </button>
+                <p className="text-[10px] text-slate-600">
+                  Start of synced history — pull older messages from WhatsApp
+                </p>
+              </div>
+            )}
             {messageGroups.map((group) => (
               <div key={group.date}>
                 {/* Date separator */}
@@ -919,6 +1254,8 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onForward={() => setForwardMsg(msg)}
+                        onDeleteForEveryone={() => void deleteForEveryone(msg)}
                       >
                         <MessageBubble
                           message={msg}
@@ -937,6 +1274,18 @@ export function MessageThread({
         )}
       </div>
 
+      {/* Floating jump-to-bottom button — appears when scrolled up */}
+      {showJumpButton && (
+        <button
+          onClick={jumpToBottom}
+          title="Jump to latest"
+          className="absolute bottom-3 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-lg transition-colors hover:bg-slate-700 hover:text-white"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </button>
+      )}
+      </div>
+
       {/* Composer */}
       <MessageComposer
         conversationId={conversation.id}
@@ -945,6 +1294,8 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        isGroup={isGroupConv}
+        groupJid={conversation.group_jid}
       />
 
       <TemplatePicker
@@ -952,6 +1303,56 @@ export function MessageThread({
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
       />
+
+      {/* Forward dialog */}
+      <Dialog open={!!forwardMsg} onOpenChange={(open) => !open && setForwardMsg(null)}>
+        <DialogContent className="border-slate-700 bg-slate-900 text-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Forward message</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 py-1">
+            <div className="max-h-16 overflow-hidden rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-400">
+              {forwardMsg?.content_text || `[${forwardMsg?.content_type}]`}
+            </div>
+            <Input
+              value={forwardSearch}
+              onChange={(e) => setForwardSearch(e.target.value)}
+              placeholder="Search chats…"
+              className="border-slate-700 bg-slate-800 text-sm text-white placeholder-slate-500"
+            />
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-700">
+              {forwardTargets
+                .filter((c) => {
+                  if (c.id === conversation.id) return false;
+                  if (!forwardSearch.trim()) return true;
+                  const q = forwardSearch.toLowerCase();
+                  return (c.group_name ?? c.contact?.name ?? c.contact?.phone ?? "")
+                    .toLowerCase()
+                    .includes(q);
+                })
+                .slice(0, 30)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    disabled={forwarding}
+                    onClick={() => void doForward(c)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-slate-800"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-700 text-xs text-white">
+                      {(c.group_name ?? c.contact?.name ?? c.contact?.phone ?? "?")
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+                    <span className="truncate">
+                      {c.group_name ?? c.contact?.name ?? c.contact?.phone}
+                    </span>
+                    {c.is_group && <span className="text-[10px] text-slate-500">group</span>}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

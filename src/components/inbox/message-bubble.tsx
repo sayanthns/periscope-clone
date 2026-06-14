@@ -248,7 +248,8 @@ export function MessageBubble({
   currentUserId,
   onToggleReaction,
 }: MessageBubbleProps) {
-  const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  const isNote = message.sender_type === "note";
+  const isAgent = message.sender_type === "agent" || message.sender_type === "bot" || isNote;
   const time = format(new Date(message.created_at), "HH:mm");
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
@@ -260,12 +261,25 @@ export function MessageBubble({
         isAgent ? "items-end" : "items-start",
       )}
     >
+      {/* Sender label for group messages — show above bubble, customer side only */}
+      {!isAgent && message.sender_name && message.sender_name !== "Unknown" && (
+        <span className="mb-0.5 ml-1 text-[10px] font-medium text-primary/80">
+          {message.sender_name}
+        </span>
+      )}
+      {isNote && (
+        <span className="mb-0.5 mr-1 text-[10px] font-medium text-amber-500/80">
+          Private note
+        </span>
+      )}
       <div
         className={cn(
           "relative rounded-2xl px-3 py-2",
-          isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-slate-800 text-slate-100",
+          isNote
+            ? "rounded-br-md border border-amber-700/40 bg-amber-950/60 text-amber-100"
+            : isAgent
+              ? "rounded-br-md bg-primary text-primary-foreground"
+              : "rounded-bl-md bg-slate-800 text-slate-100",
         )}
       >
         {reply && (
@@ -279,7 +293,7 @@ export function MessageBubble({
           )}
         >
           <span className="text-[10px] text-white/60">{time}</span>
-          {isAgent && <StatusIcon status={message.status} />}
+          {isAgent && !isNote && <StatusIcon status={message.status} />}
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

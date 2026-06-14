@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
+  BookOpen,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -97,6 +98,7 @@ const navItems: NavItem[] = [
 ];
 
 const bottomNavItems = [
+  { href: "/docs", label: "User Guide", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

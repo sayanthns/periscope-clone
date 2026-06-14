@@ -256,6 +256,69 @@ html[data-theme="rose"] {
   --sidebar-ring: oklch(0.645 0.22 16);
 }
 
+/*
+ * LIGHT THEME
+ *
+ * The components hardcode the slate scale (bg-slate-900, text-white, etc.)
+ * rather than semantic tokens. Tailwind v4 renders every palette color as a
+ * CSS variable (--color-slate-900, --color-white), so we flip the whole app
+ * to light by REMAPPING those variables here — no component edits needed.
+ *
+ * The dark UI uses: slate-950/900 = page, slate-800 = cards/inputs,
+ * slate-700 = borders/hover, white = primary text, slate-300/400/500 = text
+ * at decreasing emphasis. We invert that ramp.
+ */
+html[data-theme="light"] {
+  /* Semantic tokens (shadcn components) */
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.21 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 260);
+  --primary: oklch(0.526 0.247 293);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.47 0.24 293);
+  --primary-soft: oklch(0.526 0.247 293 / 0.1);
+  --primary-soft-2: oklch(0.526 0.247 293 / 0.18);
+  --secondary: oklch(0.96 0.005 260);
+  --secondary-foreground: oklch(0.21 0.01 260);
+  --muted: oklch(0.96 0.005 260);
+  --muted-foreground: oklch(0.5 0.01 260);
+  --accent: oklch(0.96 0.005 260);
+  --accent-foreground: oklch(0.21 0.01 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.004 260);
+  --input: oklch(0.92 0.004 260);
+  --ring: oklch(0.526 0.247 293);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.21 0.01 260);
+  --sidebar-primary: oklch(0.526 0.247 293);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.96 0.005 260);
+  --sidebar-accent-foreground: oklch(0.21 0.01 260);
+  --sidebar-border: oklch(0.92 0.004 260);
+  --sidebar-ring: oklch(0.526 0.247 293);
+
+  /* Palette remap — the actual lever that flips hardcoded utilities.
+     Surfaces (dark→light, inverted ramp): */
+  --color-slate-950: oklch(1 0 0);          /* deepest bg → white */
+  --color-slate-900: oklch(0.985 0 0);      /* page bg → near-white */
+  --color-slate-800: oklch(0.97 0.004 260); /* cards / inputs → very light gray */
+  --color-slate-700: oklch(0.92 0.004 260); /* borders / hover → light gray */
+  --color-slate-600: oklch(0.85 0.006 260); /* subtle dividers */
+  /* Text (light→dark, inverted ramp): */
+  --color-slate-500: oklch(0.55 0.01 260);  /* muted text */
+  --color-slate-400: oklch(0.5 0.012 260);  /* secondary text */
+  --color-slate-300: oklch(0.34 0.012 260); /* body text */
+  --color-slate-200: oklch(0.28 0.012 260);
+  --color-slate-100: oklch(0.22 0.012 260);
+  --color-slate-50:  oklch(0.18 0.012 260);
+  /* Primary text: components use text-white for headings → make it dark */
+  --color-white: oklch(0.21 0.01 260);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

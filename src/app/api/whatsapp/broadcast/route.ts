@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage } from '@/lib/whatsapp/baileys-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
@@ -179,6 +179,16 @@ export async function POST(request: Request) {
     let sentCount = 0
     let failedCount = 0
 
+    // Pre-filter: load opted-out phones so we never send to them
+    const allPhones = recipients.map(r => sanitizePhoneForMeta(r.phone))
+    const { data: optedOutRows } = await supabase
+      .from('contacts')
+      .select('phone')
+      .eq('account_id', accountId)
+      .not('opted_out_at', 'is', null)
+      .in('phone', allPhones)
+    const optedOutSet = new Set((optedOutRows ?? []).map((r: { phone: string }) => r.phone))
+
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
 
@@ -187,6 +197,17 @@ export async function POST(request: Request) {
           phone: recipient.phone,
           status: 'failed',
           error: 'Invalid phone number format',
+        })
+        failedCount++
+        continue
+      }
+
+      // Safety gate: skip opted-out contacts
+      if (optedOutSet.has(sanitized)) {
+        results.push({
+          phone: recipient.phone,
+          status: 'failed',
+          error: 'Contact has opted out — message suppressed',
         })
         failedCount++
         continue

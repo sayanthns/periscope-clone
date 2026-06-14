@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, type MediaKind } from '@/lib/whatsapp/baileys-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import {
@@ -63,12 +63,17 @@ export async function POST(request: Request) {
       message_type,
       content_text,
       media_url,
+      media_mimetype,
+      media_ptt,
+      mentioned_jids,
       template_name,
       template_language,
       template_params,
       template_message_params,
       reply_to_message_id,
     } = body
+
+    const MEDIA_TYPES = ['image', 'video', 'document', 'audio']
 
     if (!conversation_id || !message_type) {
       return NextResponse.json(
@@ -80,6 +85,13 @@ export async function POST(request: Request) {
     if (message_type === 'text' && !content_text) {
       return NextResponse.json(
         { error: 'content_text is required for text messages' },
+        { status: 400 }
+      )
+    }
+
+    if (MEDIA_TYPES.includes(message_type) && !media_url) {
+      return NextResponse.json(
+        { error: 'media_url is required for media messages' },
         { status: 400 }
       )
     }
@@ -114,23 +126,69 @@ export async function POST(request: Request) {
       )
     }
 
-    // Sanitize and validate phone
-    const sanitizedPhone = sanitizePhoneForMeta(contact.phone)
-    if (!isValidE164(sanitizedPhone)) {
+    // Private team note — stored in the thread, never sent to WhatsApp.
+    if (message_type === 'note') {
+      const { data: noteRecord, error: noteError } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id,
+          sender_type: 'note',
+          sender_id: user.id,
+          content_type: 'text',
+          content_text,
+          status: 'sent',
+        })
+        .select()
+        .single()
+
+      if (noteError) {
+        return NextResponse.json({ error: noteError.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, message_id: noteRecord.id })
+    }
+
+    // For group conversations, use the group JID directly — no E164 needed.
+    // For 1:1, validate and sanitize as normal.
+    const isGroupConv = !!(conversation.is_group && conversation.group_jid)
+    const sanitizedPhone = isGroupConv
+      ? (conversation.group_jid as string)
+      : sanitizePhoneForMeta(contact.phone)
+
+    if (!isGroupConv && !isValidE164(sanitizedPhone)) {
       return NextResponse.json(
         { error: 'Invalid phone number format' },
         { status: 400 }
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // Fetch the WhatsApp config for the NUMBER that owns this conversation.
+    // Multi-number: an account can have several configs, so we can't use a
+    // bare .single() on account_id. Prefer the conversation's phone_number_id;
+    // fall back to the account's connected number (legacy rows w/ null).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let config: any = null
+    const convPhoneId = (conversation as { phone_number_id?: string }).phone_number_id
+    if (convPhoneId) {
+      const { data } = await supabase
+        .from('whatsapp_config')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('phone_number_id', convPhoneId)
+        .maybeSingle()
+      config = data
+    }
+    if (!config) {
+      // Legacy / unrouted conversation — prefer a connected number, else any.
+      const { data: rows } = await supabase
+        .from('whatsapp_config')
+        .select('*')
+        .eq('account_id', accountId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const list = (rows ?? []) as any[]
+      config = list.find((r) => r.status === 'connected') ?? list[0] ?? null
+    }
 
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
         { status: 400 }
@@ -246,53 +304,72 @@ export async function POST(request: Request) {
         })
         return result.messageId
       }
+      if (MEDIA_TYPES.includes(message_type)) {
+        const result = await sendMediaMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          kind: message_type as MediaKind,
+          link: media_url,
+          caption: content_text || undefined,
+          mimetype: media_mimetype || undefined,
+          ptt: media_ptt === true,
+        })
+        return result.messageId
+      }
       const result = await sendTextMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
         to: phone,
         text: content_text,
         contextMessageId,
+        mentions: Array.isArray(mentioned_jids) && mentioned_jids.length ? mentioned_jids : undefined,
       })
       return result.messageId
     }
 
     try {
-      const variants = phoneVariants(sanitizedPhone)
-      let lastError: unknown = null
+      if (isGroupConv) {
+        // Group: JID is final — no variants, no retry
+        waMessageId = await attempt(sanitizedPhone)
+        workingPhone = sanitizedPhone
+      } else {
+        const variants = phoneVariants(sanitizedPhone)
+        let lastError: unknown = null
 
-      for (const variant of variants) {
-        try {
-          waMessageId = await attempt(variant)
-          workingPhone = variant
-          lastError = null
-          break
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          // Only retry when the failure is specifically that the
-          // recipient isn't in Meta's allowed list. Any other error
-          // (bad token, invalid template, etc.) bubbles up immediately.
-          if (!isRecipientNotAllowedError(message)) {
-            throw err
+        for (const variant of variants) {
+          try {
+            waMessageId = await attempt(variant)
+            workingPhone = variant
+            lastError = null
+            break
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            // Only retry when the failure is specifically that the
+            // recipient isn't in Meta's allowed list. Any other error
+            // (bad token, invalid template, etc.) bubbles up immediately.
+            if (!isRecipientNotAllowedError(message)) {
+              throw err
+            }
+            lastError = err
+            console.warn(`[whatsapp/send] variant "${variant}" rejected by Meta, trying next…`)
           }
-          lastError = err
-          console.warn(`[whatsapp/send] variant "${variant}" rejected by Meta, trying next…`)
         }
-      }
 
-      if (lastError) throw lastError
+        if (lastError) throw lastError
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API send failed for all variants:', message)
+      console.error('Baileys send failed:', message)
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
+        { error: `Failed to send: ${message}` },
         { status: 502 }
       )
     }
 
-    // If a non-original variant succeeded, update the contact so future
-    // sends go straight through. sanitizePhoneForMeta on workingPhone
-    // will yield workingPhone itself, so re-storing preserves it.
-    if (workingPhone !== sanitizedPhone) {
+    // If a non-original variant succeeded (1:1 only), update the contact so
+    // future sends go straight through.
+    if (!isGroupConv && workingPhone !== sanitizedPhone) {
       console.log(
         `[whatsapp/send] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
       )

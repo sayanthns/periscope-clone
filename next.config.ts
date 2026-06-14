@@ -54,6 +54,9 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: __dirname,
+  },
   /**
    * Cache-Control policy.
    *

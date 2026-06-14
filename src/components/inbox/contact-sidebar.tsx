@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, Conversation } from "@/types";
+import { GroupPanel } from "./group-panel";
+import { ChatExtras } from "./chat-extras";
 import {
   Phone,
   Mail,
@@ -15,17 +17,21 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
+import { useMaskedPhone } from "@/hooks/use-masked-phone";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  conversation?: Conversation | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const { accountId } = useAuth();
+  const { maskPhone, shouldMask } = useMaskedPhone();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -123,7 +129,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = contact.name || maskPhone(contact.phone);
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -151,20 +157,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             )}
           </div>
 
-          {/* Phone */}
+          {/* Phone / Group ID */}
           <div className="mt-4 space-y-2">
+            {contact.is_group ? (
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400">
+                <Users className="h-4 w-4 text-slate-500" />
+                <span className="flex-1 truncate text-left">WhatsApp Group</span>
+              </div>
+            ) : (
             <button
-              onClick={handleCopyPhone}
+              onClick={shouldMask ? undefined : handleCopyPhone}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-800"
             >
               <Phone className="h-4 w-4 text-slate-500" />
-              <span className="flex-1 text-left">{contact.phone}</span>
-              {copied ? (
+              <span className="flex-1 text-left">{maskPhone(contact.phone)}</span>
+              {!shouldMask && (copied ? (
                 <Check className="h-3 w-3 text-primary" />
               ) : (
                 <Copy className="h-3 w-3 text-slate-600" />
-              )}
+              ))}
             </button>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300">
@@ -205,6 +218,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Divider */}
           <div className="my-4 border-t border-slate-800" />
+
+          {/* Group management — members + auto-replies (groups only) */}
+          {conversation?.is_group && conversation.group_jid && (
+            <>
+              <GroupPanel groupJid={conversation.group_jid} />
+              <div className="my-4 border-t border-slate-800" />
+            </>
+          )}
+
+          {/* Tasks + custom properties (all conversations) */}
+          {conversation && (
+            <>
+              <ChatExtras
+                conversationId={conversation.id}
+                customProperties={
+                  (conversation as Conversation & { custom_properties?: Record<string, string> })
+                    .custom_properties
+                }
+              />
+              <div className="my-4 border-t border-slate-800" />
+            </>
+          )}
 
           {/* Active Deals */}
           <div>

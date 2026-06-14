@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, SmilePlus, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -19,6 +19,10 @@ interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  /** Forward this message to another conversation */
+  onForward?: () => void;
+  /** Delete for everyone (agent messages with a real WA id only) */
+  onDeleteForEveryone?: () => void;
   children: ReactNode;
 }
 
@@ -31,6 +35,8 @@ export function MessageActions({
   message,
   onReply,
   onReact,
+  onForward,
+  onDeleteForEveryone,
   children,
 }: MessageActionsProps) {
   // Touch devices have no hover. Long-press fires `contextmenu`; we capture
@@ -141,6 +147,28 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {onForward && (
+          <button
+            type="button"
+            onClick={() => { onForward(); setTouchOpen(false); }}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-slate-300 hover:bg-slate-700 hover:text-white"
+            aria-label="Forward"
+            title="Forward"
+          >
+            <Share className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {isAgent && onDeleteForEveryone && (
+          <button
+            type="button"
+            onClick={() => { onDeleteForEveryone(); setTouchOpen(false); }}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-700 hover:text-red-400"
+            aria-label="Delete for everyone"
+            title="Delete for everyone"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       </div>
     </div>

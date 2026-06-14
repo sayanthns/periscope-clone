@@ -8,16 +8,18 @@ import {
   User,
   Palette,
   UsersRound,
+  Building2,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TemplateManager } from '@/components/settings/template-manager';
+import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { TagManager } from '@/components/settings/tag-manager';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { PasswordForm } from '@/components/settings/password-form';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { MembersTab } from '@/components/settings/members-tab';
+import { WorkspacePanel } from '@/components/settings/workspace-panel';
 
 const TAB_VALUES = [
   'profile',
@@ -26,6 +28,7 @@ const TAB_VALUES = [
   'tags',
   'appearance',
   'members',
+  'workspace',
 ] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
@@ -55,8 +58,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Manage your profile, WhatsApp® integration, message templates, and
-          tags.
+          Manage your profile, WhatsApp® integration, quick replies, and tags.
         </p>
       </div>
 
@@ -81,7 +83,7 @@ export default function SettingsPage() {
             className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
           >
             <MessageSquare className="size-4" />
-            Templates
+            Quick Replies
           </TabsTrigger>
           <TabsTrigger
             value="tags"
@@ -104,6 +106,13 @@ export default function SettingsPage() {
             <UsersRound className="size-4" />
             Members
           </TabsTrigger>
+          <TabsTrigger
+            value="workspace"
+            className="data-active:bg-slate-800 data-active:text-primary text-slate-400"
+          >
+            <Building2 className="size-4" />
+            Workspace
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
@@ -117,7 +126,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="templates">
-          <TemplateManager />
+          <QuickRepliesManager />
         </TabsContent>
 
         <TabsContent value="tags">
@@ -130,6 +139,10 @@ export default function SettingsPage() {
 
         <TabsContent value="members">
           <MembersTab />
+        </TabsContent>
+
+        <TabsContent value="workspace">
+          <WorkspacePanel />
         </TabsContent>
       </Tabs>
     </div>

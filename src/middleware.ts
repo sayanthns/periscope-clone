@@ -60,9 +60,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // API routes that need auth (not webhooks)
+  // API routes that need auth (not webhooks or internal Baileys-to-Next callbacks)
+  // Paths called by baileys-service (server-to-server Bearer auth) must be excluded:
+  //   /api/whatsapp/inbound, /api/whatsapp/groups/sync, /api/whatsapp/baileys/*
+  const BAILEYS_INTERNAL = ['/inbound', '/groups/sync', '/baileys', '/cron', '/contacts/sync', '/history-sync']
+  const isBaileysInternal = BAILEYS_INTERNAL.some(p =>
+    request.nextUrl.pathname.includes(p)
+  )
   if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
-      !request.nextUrl.pathname.includes('/webhook')) {
+      !request.nextUrl.pathname.includes('/webhook') &&
+      !isBaileysInternal) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

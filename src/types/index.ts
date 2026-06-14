@@ -94,6 +94,9 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  /** True when this contact row represents a WhatsApp group (JID @g.us). */
+  is_group?: boolean;
+  group_jid?: string;
   created_at: string;
   updated_at: string;
 }
@@ -138,6 +141,29 @@ export interface ContactNote {
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
 
+/** Chat-level label (Periskope-style). Distinct from contact tags. */
+export interface ChatLabel {
+  id: string;
+  account_id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  account_id: string;
+  user_id: string;
+  conversation_id: string;
+  content_text: string;
+  send_at: string;
+  recurrence: 'daily' | 'weekly' | 'monthly' | null;
+  status: 'pending' | 'sent' | 'failed' | 'cancelled';
+  last_error?: string;
+  sent_at?: string;
+  created_at: string;
+}
+
 export interface Conversation {
   id: string;
   user_id: string;
@@ -150,9 +176,20 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /** True when this conversation is a WhatsApp group thread. */
+  is_group?: boolean;
+  group_jid?: string;
+  group_name?: string;
+  /** Per-chat options (027_chat_options.sql) */
+  pinned?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  custom_properties?: Record<string, string>;
+  /** Which connected WhatsApp number owns this conversation (028_multi_number). */
+  phone_number_id?: string | null;
 }
 
-export type SenderType = 'customer' | 'agent' | 'bot';
+export type SenderType = 'customer' | 'agent' | 'bot' | 'note';
 export type ContentType =
   | 'text'
   | 'image'
@@ -185,6 +222,11 @@ export interface Message {
    * cue (renders with a "↩ button reply" affordance).
    */
   interactive_reply_id?: string;
+  /**
+   * Display name of the sender within a group conversation.
+   * NULL for 1-to-1 conversations.
+   */
+  sender_name?: string;
 }
 
 export type ReactionActor = 'customer' | 'agent';
