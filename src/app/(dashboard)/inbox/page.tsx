@@ -149,13 +149,18 @@ export default function InboxPage() {
         return;
       }
 
+      // Multi-number: an account can have several config rows. The old
+      // .maybeSingle() errored on >1 row (PGRST116) → null → false banner
+      // even with a number connected. Treat connected if ANY is connected.
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
-        .eq("account_id", accountId)
-        .maybeSingle();
+        .eq("account_id", accountId);
 
-      setWhatsappConnected(data?.status === "connected");
+      const anyConnected = (data ?? []).some(
+        (c: { status: string }) => c.status === "connected",
+      );
+      setWhatsappConnected(anyConnected);
     };
 
     checkConnection();

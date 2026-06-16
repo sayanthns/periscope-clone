@@ -350,7 +350,7 @@ export function ConversationList({
     // w-full on mobile so the list occupies the whole viewport when it's
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
-    <div className="flex h-full w-full flex-col border-r border-slate-800 bg-slate-900 lg:w-80">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden border-r border-slate-800 bg-slate-900 lg:w-80">
       {/* Header row */}
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
         <span className="text-sm font-semibold text-white">Conversations</span>
@@ -651,8 +651,10 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Conversation Items */}
-      <ScrollArea className="flex-1">
+      {/* Conversation Items — min-h-0 lets this flex child bound itself so
+          the Base UI viewport actually scrolls instead of growing the column
+          past the viewport (which the page clips → no scrollbar). */}
+      <ScrollArea className="min-h-0 flex-1">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
