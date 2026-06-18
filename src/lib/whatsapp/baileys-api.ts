@@ -90,10 +90,12 @@ export interface SendMediaMessageArgs {
   mimetype?: string
   /** Audio only: true = WhatsApp voice note (push-to-talk bubble) */
   ptt?: boolean
+  /** Audio only: clip length in seconds so WhatsApp shows the duration. */
+  seconds?: number
 }
 
 export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<MetaSendResult> {
-  const { phoneNumberId, to, kind, link, caption, mimetype, ptt } = args
+  const { phoneNumberId, to, kind, link, caption, mimetype, ptt, seconds } = args
   const jid = phoneToJid(to)
 
   const fallback =
@@ -108,6 +110,7 @@ export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<Meta
     mimetype: mimetype || fallback,
     caption,
     ptt,
+    seconds,
   })
   if (!res.ok) await throwBaileysError(res, `Baileys send-media failed: ${res.status}`)
 

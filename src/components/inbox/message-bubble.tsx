@@ -120,7 +120,10 @@ function MessageContent({ message }: { message: Message }) {
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        // overflow-wrap:anywhere forces very long unbroken tokens (Teams /
+        // Instagram URLs with no spaces) to wrap inside the bubble instead
+        // of pushing its width past the 75% cap toward the sidebar.
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm">
           {message.content_text}
         </p>
       );

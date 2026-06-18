@@ -204,6 +204,9 @@ export function MessageComposer({
     recorderRef.current = null;
 
     if (!send) return;
+    // Capture the recorded length (whole seconds, min 1) so WhatsApp shows
+    // the voice-note duration instead of falling back to the clock time.
+    const durationSecs = Math.max(1, recordSecs);
     const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
     if (blob.size < 1000) {
       toast.info("Recording too short");
@@ -232,6 +235,7 @@ export function MessageComposer({
           media_url: pub.publicUrl,
           media_mimetype: "audio/ogg; codecs=opus",
           media_ptt: true,
+          media_duration: durationSecs,
         }),
       });
       const payload = await res.json().catch(() => ({}));

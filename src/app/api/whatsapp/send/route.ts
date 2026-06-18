@@ -65,6 +65,7 @@ export async function POST(request: Request) {
       media_url,
       media_mimetype,
       media_ptt,
+      media_duration,
       mentioned_jids,
       template_name,
       template_language,
@@ -314,6 +315,7 @@ export async function POST(request: Request) {
           caption: content_text || undefined,
           mimetype: media_mimetype || undefined,
           ptt: media_ptt === true,
+          seconds: typeof media_duration === 'number' ? media_duration : undefined,
         })
         return result.messageId
       }
