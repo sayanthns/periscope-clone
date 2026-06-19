@@ -155,7 +155,58 @@ function parseBaileysContent(msg: BaileysMessage['message']): {
     return { contentType: 'text', contentText: msg.reactionMessage.text || null, mediaUrl: null }
   }
 
-  // Unknown type
+  // ── Rich types Baileys exposes that don't map to a media slot ──────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const m = msg as any
+
+  // View-once wrappers — unwrap and re-parse the inner content
+  const viewOnce = m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message ?? m.viewOnceMessageV2Extension?.message
+  if (viewOnce) return parseBaileysContent(viewOnce)
+
+  // Contact card (vCard) → "Name (+number)"
+  if (m.contactMessage) {
+    const name = m.contactMessage.displayName || 'Contact'
+    const tel = /TEL[^:]*:([+\d\s-]+)/i.exec(m.contactMessage.vcard ?? '')?.[1]?.trim()
+    return { contentType: 'text', contentText: `👤 ${name}${tel ? ` (${tel})` : ''}`, mediaUrl: null }
+  }
+  if (m.contactsArrayMessage) {
+    const arr = m.contactsArrayMessage.contacts ?? []
+    const names = arr.map((c: { displayName?: string }) => c.displayName).filter(Boolean).slice(0, 3).join(', ')
+    return { contentType: 'text', contentText: `👤 ${arr.length} contacts${names ? `: ${names}` : ''}`, mediaUrl: null }
+  }
+
+  // Polls
+  const poll = m.pollCreationMessage ?? m.pollCreationMessageV2 ?? m.pollCreationMessageV3
+  if (poll) {
+    return { contentType: 'text', contentText: `📊 Poll: ${poll.name ?? 'Untitled'}`, mediaUrl: null }
+  }
+
+  // Video note (round PTV) → treat as video
+  if (m.ptvMessage) {
+    return { contentType: 'video', contentText: null, mediaUrl: m.ptvMessage.url || null }
+  }
+
+  // Live location
+  if (m.liveLocationMessage) {
+    const ll = m.liveLocationMessage
+    return { contentType: 'location', contentText: ll.caption || '📍 Live location', mediaUrl: null }
+  }
+
+  // Interactive replies (button / list taps) → the chosen label
+  const interactiveText =
+    m.buttonsResponseMessage?.selectedDisplayText ??
+    m.listResponseMessage?.title ??
+    m.templateButtonReplyMessage?.selectedDisplayText
+  if (interactiveText) {
+    return { contentType: 'text', contentText: interactiveText, mediaUrl: null }
+  }
+
+  // Group invite
+  if (m.groupInviteMessage) {
+    return { contentType: 'text', contentText: `👥 Group invite: ${m.groupInviteMessage.groupName ?? ''}`.trim(), mediaUrl: null }
+  }
+
+  // Unknown type — last resort
   const knownKey = Object.keys(msg).find(k => k.endsWith('Message'))
   return {
     contentType: 'text',
