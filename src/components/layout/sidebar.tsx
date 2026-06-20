@@ -181,11 +181,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+            <img
+              src="/enfono-icon.png"
+              alt="Enfono"
+              className="h-8 w-8 shrink-0 rounded-lg object-contain"
+            />
             <span className="text-sm font-semibold text-white">
-              CRM Template for WhatsApp
+              Enfono Support System
+              <span className="text-slate-400"> (ESS)</span>
             </span>
           </Link>
           <button
