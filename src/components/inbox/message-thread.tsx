@@ -48,6 +48,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { LabelPicker } from "./label-picker";
+import { SlaBadge } from "./sla-badge";
 import { useMaskedPhone } from "@/hooks/use-masked-phone";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
@@ -395,6 +396,12 @@ export function MessageThread({
   // parent's resyncToken); the 700ms spin is just feedback so the click
   // doesn't feel like a no-op. Cleared via the timer ref on unmount.
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Ticks the header SLA badge every 30s.
+  const [slaNowMs, setSlaNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setSlaNowMs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
@@ -740,9 +747,15 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
+      // SLA: closing stops the resolution clock; reopening clears it so a
+      // fresh inbound restarts SLA cleanly.
+      const slaPatch =
+        status === "closed"
+          ? { resolved_at: new Date().toISOString() }
+          : { resolved_at: null };
       await supabase
         .from("conversations")
-        .update({ status })
+        .update({ status, ...slaPatch })
         .eq("id", conversation.id);
 
       onStatusChange(conversation.id, status);
@@ -1012,7 +1025,10 @@ export function MessageThread({
             {displayName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-white">{displayName}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-sm font-semibold text-white">{displayName}</h2>
+              <SlaBadge conversation={conversation} nowMs={slaNowMs} />
+            </div>
             <p className="truncate text-xs text-slate-400">{subLabel}</p>
           </div>
           {/* Session timer removed — Baileys has no 24-hour session window */}

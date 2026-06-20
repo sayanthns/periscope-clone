@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SlaBadge, slaState } from "./sla-badge";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -44,11 +45,13 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-slate-500",
 };
 
-const FILTER_OPTIONS: { label: string; value: ConversationStatus | "all" | "archived" }[] = [
+type ListFilter = ConversationStatus | "all" | "archived" | "breaching";
+const FILTER_OPTIONS: { label: string; value: ListFilter }[] = [
   { label: "All", value: "all" },
   { label: "Open", value: "open" },
   { label: "Pending", value: "pending" },
   { label: "Closed", value: "closed" },
+  { label: "Breaching SLA", value: "breaching" },
   { label: "Archived", value: "archived" },
 ];
 
@@ -60,7 +63,13 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<ConversationStatus | "all" | "archived">("all");
+  const [filter, setFilter] = useState<ListFilter>("all");
+  // Ticks every 30s so SLA countdown badges + the breaching filter refresh.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
   const [groupsOnly, setGroupsOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -284,6 +293,9 @@ export function ConversationList({
     // Archived: hidden everywhere except the explicit Archived view
     if (filter === "archived") {
       result = result.filter((c) => c.archived === true);
+    } else if (filter === "breaching") {
+      // SLA breach view: anything with a live breach tone
+      result = result.filter((c) => c.archived !== true && slaState(c, nowMs)?.tone === "breach");
     } else {
       result = result.filter((c) => c.archived !== true);
       if (filter !== "all") {
@@ -328,7 +340,7 @@ export function ConversationList({
       const bt = b.last_message_at ? Date.parse(b.last_message_at) : 0;
       return bt - at;
     });
-  }, [conversations, filter, search, groupsOnly, labelFilter, numberFilter, convLabels, msgMatchIds]);
+  }, [conversations, filter, search, groupsOnly, labelFilter, numberFilter, convLabels, msgMatchIds, nowMs]);
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -674,6 +686,7 @@ export function ConversationList({
                 itemLabels={(convLabels.get(conv.id) ?? [])
                   .map((id) => labels.find((l) => l.id === id))
                   .filter((l): l is ChatLabel => !!l)}
+                nowMs={nowMs}
               />
             ))}
           </div>
@@ -688,6 +701,7 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   itemLabels?: ChatLabel[];
+  nowMs: number;
 }
 
 function ConversationItem({
@@ -695,6 +709,7 @@ function ConversationItem({
   isActive,
   onSelect,
   itemLabels = [],
+  nowMs,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   // Group conversations: prefer group_name, fall back to contact.name
@@ -756,8 +771,9 @@ function ConversationItem({
           </span>
           <span className="shrink-0 text-[10px] text-slate-500">{timeAgo}</span>
         </div>
-        {itemLabels.length > 0 && (
+        {(itemLabels.length > 0 || slaState(conversation, nowMs)) && (
           <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            <SlaBadge conversation={conversation} nowMs={nowMs} />
             {itemLabels.slice(0, 3).map((l) => (
               <span
                 key={l.id}

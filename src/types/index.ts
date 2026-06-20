@@ -185,6 +185,13 @@ export interface Conversation {
   muted?: boolean;
   archived?: boolean;
   custom_properties?: Record<string, string>;
+  /** SLA clocks (029_sla.sql) */
+  first_response_due_at?: string | null;
+  first_response_met_at?: string | null;
+  resolution_due_at?: string | null;
+  resolved_at?: string | null;
+  first_response_breached?: boolean;
+  resolution_breached?: boolean;
   /** Which connected WhatsApp number owns this conversation (028_multi_number). */
   phone_number_id?: string | null;
 }

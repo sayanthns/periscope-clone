@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { computeDueAt, type SlaPolicy } from '@/lib/whatsapp/sla'
 
 // ── Supabase admin client ────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -396,6 +397,64 @@ async function handleOptOut(contactId: string): Promise<void> {
   console.log(`[inbound] Contact ${contactId} opted out`)
 }
 
+/**
+ * Start / reset SLA clocks for an inbound CUSTOMER message.
+ *   - new unanswered inbound → set first-response + resolution due
+ *   - chat was resolved/closed → reopen: clear met/resolved/breach, reset clocks
+ *   - already counting (FR clock open) → no-op
+ * Best-effort; never blocks message storage.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function stampInboundSla(accountId: string, conv: any): Promise<void> {
+  try {
+    const { data: policy } = await supabaseAdmin()
+      .from('sla_policies').select('*').eq('account_id', accountId).maybeSingle()
+    if (!policy || !policy.enabled) return
+
+    const now = new Date()
+    const frDue = computeDueAt(now, policy.first_response_mins, policy as SlaPolicy).toISOString()
+    const resDue = computeDueAt(now, policy.resolution_mins, policy as SlaPolicy).toISOString()
+
+    const wasResolved = !!conv.resolved_at || conv.status === 'closed'
+    const counting = conv.first_response_due_at && !conv.first_response_met_at
+
+    if (wasResolved) {
+      // Reopen — fresh clocks
+      await supabaseAdmin().from('conversations').update({
+        status: 'open',
+        first_response_due_at: frDue,
+        first_response_met_at: null,
+        resolution_due_at: resDue,
+        resolved_at: null,
+        first_response_breached: false,
+        resolution_breached: false,
+      }).eq('id', conv.id)
+    } else if (!counting && !conv.first_response_met_at) {
+      // First unanswered inbound on an open chat
+      await supabaseAdmin().from('conversations').update({
+        first_response_due_at: frDue,
+        resolution_due_at: conv.resolution_due_at ?? resDue,
+      }).eq('id', conv.id)
+    }
+  } catch (err) {
+    console.error('[sla] stampInbound error:', err)
+  }
+}
+
+/** Agent replied (from phone/other device) → stop the first-response clock. */
+async function stampFirstResponseMet(convId: string): Promise<void> {
+  try {
+    await supabaseAdmin()
+      .from('conversations')
+      .update({ first_response_met_at: new Date().toISOString() })
+      .eq('id', convId)
+      .is('first_response_met_at', null)
+      .not('first_response_due_at', 'is', null)
+  } catch (err) {
+    console.error('[sla] stampFirstResponseMet error:', err)
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function findOrCreateConversation(accountId: string, userId: string, contactId: string, phoneId?: string): Promise<any | null> {
   const { data: existing, error } = await supabaseAdmin()
@@ -516,6 +575,9 @@ async function processFromMeInbound(phoneId: string, remoteJid: string, message:
   const conv = await findOrCreateConversation(accountId, userId, contactOutcome.contact.id, phoneId)
   if (!conv) return
 
+  // SLA: agent answered from the phone → stop first-response clock
+  await stampFirstResponseMet(conv.id)
+
   const messageId = key.id ?? `baileys-fromme-${Date.now()}`
 
   // Skip if already stored by the send API
@@ -568,6 +630,9 @@ async function processFromMeGroupInbound(phoneId: string, groupJid: string, mess
 
   const conv = await findOrCreateGroupConversation(accountId, userId, groupContactOutcome.contact.id, groupJid, groupName, phoneId)
   if (!conv) return
+
+  // SLA: agent answered from the phone → stop first-response clock
+  await stampFirstResponseMet(conv.id)
 
   const messageId = key.id ?? `baileys-fromme-${Date.now()}`
 
@@ -687,6 +752,9 @@ async function processInbound(phoneId: string, message: BaileysMessage) {
 
   const conv = await findOrCreateConversation(accountId, userId, contactOutcome.contact.id, phoneId)
   if (!conv) return
+
+  // SLA: start/reset clocks for this inbound customer message
+  await stampInboundSla(accountId, conv)
 
   const parsed = parseBaileysContent(message.message)
   const contentType = parsed.contentType
@@ -858,6 +926,9 @@ async function processGroupInbound(phoneId: string, groupJid: string, message: B
 
   const conv = await findOrCreateGroupConversation(accountId, userId, groupContactOutcome.contact.id, groupJid, groupName, phoneId)
   if (!conv) return
+
+  // SLA: start/reset clocks for this inbound customer message
+  await stampInboundSla(accountId, conv)
 
   const parsedGroup = parseBaileysContent(message.message)
   const contentType = parsedGroup.contentType

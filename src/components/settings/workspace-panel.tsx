@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Download, Shuffle, EyeOff, Key, Webhook, Plus, Trash2, Copy } from "lucide-react";
+import { Download, Shuffle, EyeOff, Key, Webhook, Plus, Trash2, Copy, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -76,6 +76,45 @@ export function WorkspacePanel() {
   const [hooks, setHooks] = useState<WebhookRow[]>([]);
   const [newHookUrl, setNewHookUrl] = useState("");
 
+  // SLA policy
+  const [sla, setSla] = useState({
+    first_response_mins: 30,
+    resolution_mins: 1440,
+    business_hours_only: false,
+    work_start: "09:00",
+    work_end: "18:00",
+    enabled: true,
+  });
+  const [slaLoaded, setSlaLoaded] = useState(false);
+  const [savingSla, setSavingSla] = useState(false);
+
+  const loadSla = useCallback(async () => {
+    if (!accountId) return;
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("sla_policies")
+      .select("first_response_mins, resolution_mins, business_hours_only, work_start, work_end, enabled")
+      .eq("account_id", accountId)
+      .maybeSingle();
+    if (data) setSla((s) => ({ ...s, ...data }));
+    setSlaLoaded(true);
+  }, [accountId]);
+
+  const saveSla = useCallback(async () => {
+    if (!accountId || savingSla) return;
+    setSavingSla(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("sla_policies")
+        .upsert({ account_id: accountId, ...sla, updated_at: new Date().toISOString() }, { onConflict: "account_id" });
+      if (error) toast.error(`SLA save failed: ${error.message}`);
+      else toast.success("SLA policy saved");
+    } finally {
+      setSavingSla(false);
+    }
+  }, [accountId, sla, savingSla]);
+
   const loadApiKeys = useCallback(async () => {
     const res = await fetch("/api/account/api-keys");
     if (!res.ok) return;
@@ -96,7 +135,8 @@ export function WorkspacePanel() {
   useEffect(() => {
     loadApiKeys();
     loadHooks();
-  }, [loadApiKeys, loadHooks]);
+    loadSla();
+  }, [loadApiKeys, loadHooks, loadSla]);
 
   const createApiKey = useCallback(async () => {
     if (!newKeyName.trim() || creatingKey) return;
@@ -269,6 +309,82 @@ export function WorkspacePanel() {
                 else toast.success(v ? "Number masking on" : "Number masking off");
               }}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SLA policy */}
+      <Card className="border-slate-700 bg-slate-900">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base text-white">
+            <Clock className="h-4 w-4 text-primary" /> SLA targets
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-slate-300">SLA tracking enabled</p>
+            <Switch
+              checked={sla.enabled}
+              disabled={!slaLoaded}
+              onCheckedChange={(v) => setSla((s) => ({ ...s, enabled: v }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              First response (minutes)
+              <Input
+                type="number"
+                min={1}
+                value={sla.first_response_mins}
+                onChange={(e) => setSla((s) => ({ ...s, first_response_mins: Number(e.target.value) || 0 }))}
+                className="border-slate-700 bg-slate-800 text-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-slate-400">
+              Resolution (minutes)
+              <Input
+                type="number"
+                min={1}
+                value={sla.resolution_mins}
+                onChange={(e) => setSla((s) => ({ ...s, resolution_mins: Number(e.target.value) || 0 }))}
+                className="border-slate-700 bg-slate-800 text-white"
+              />
+            </label>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-slate-300">Count business hours only</p>
+            <Switch
+              checked={sla.business_hours_only}
+              disabled={!slaLoaded}
+              onCheckedChange={(v) => setSla((s) => ({ ...s, business_hours_only: v }))}
+            />
+          </div>
+          {sla.business_hours_only && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Work start
+                <Input
+                  type="time"
+                  value={sla.work_start}
+                  onChange={(e) => setSla((s) => ({ ...s, work_start: e.target.value }))}
+                  className="border-slate-700 bg-slate-800 text-white [color-scheme:dark]"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-slate-400">
+                Work end
+                <Input
+                  type="time"
+                  value={sla.work_end}
+                  onChange={(e) => setSla((s) => ({ ...s, work_end: e.target.value }))}
+                  className="border-slate-700 bg-slate-800 text-white [color-scheme:dark]"
+                />
+              </label>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={saveSla} disabled={savingSla} className="bg-primary hover:bg-primary/90">
+              {savingSla ? "Saving…" : "Save SLA"}
+            </Button>
           </div>
         </CardContent>
       </Card>

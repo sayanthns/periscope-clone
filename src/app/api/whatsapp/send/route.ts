@@ -419,6 +419,15 @@ export async function POST(request: Request) {
       })
       .eq('id', conversation_id)
 
+    // SLA: an agent reply stops the first-response clock (only if one was
+    // open and not already met). Scoped + guarded so it's idempotent.
+    await supabase
+      .from('conversations')
+      .update({ first_response_met_at: new Date().toISOString() })
+      .eq('id', conversation_id)
+      .is('first_response_met_at', null)
+      .not('first_response_due_at', 'is', null)
+
     // Pause any active Flow run for this contact — the agent stepping
     // in is the strongest "yield, human is here" signal. See PR #2
     // plan for why we pause (not end): preserves diagnostic state +
