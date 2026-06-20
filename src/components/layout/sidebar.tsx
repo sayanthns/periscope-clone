@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
@@ -13,6 +13,8 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  PanelLeft,
+  PanelLeftClose,
   Radio,
   Settings,
   Shield,
@@ -112,6 +114,19 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
+
+  // Desktop collapse → icon-only rail. Persisted so it survives reloads.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("ess.sidebar.collapsed") === "1") setCollapsed(true);
+  }, []);
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem("ess.sidebar.collapsed", next ? "1" : "0");
+      return next;
+    });
+
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
   // (the 017 signup trigger seeds it from `full_name`), so showing it
@@ -173,14 +188,22 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.
-          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          // Width collapses to an icon rail on desktop when `collapsed`.
+          "lg:static lg:z-0 lg:translate-x-0 lg:transition-none",
+          collapsed ? "lg:w-16" : "lg:w-60",
         )}
         aria-label="Primary"
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
+        <div className={cn(
+          "flex h-14 shrink-0 items-center gap-2 border-b border-slate-800 px-4",
+          collapsed ? "lg:justify-center lg:px-2" : "justify-between",
+        )}>
+          <Link
+            href="/dashboard"
+            className={cn("flex items-center gap-2", collapsed && "lg:hidden")}
+          >
             <img
               src="/enfono-icon.png"
               alt="Enfono"
@@ -191,6 +214,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <span className="text-slate-400"> (ESS)</span>
             </span>
           </Link>
+          {/* Desktop collapse toggle (centered & alone on the collapsed rail) */}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand" : "Collapse"}
+            className="hidden h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white lg:flex"
+          >
+            {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </button>
+          {/* Mobile close */}
           <button
             type="button"
             onClick={onClose}
@@ -216,17 +250,19 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    title={collapsed ? item.label : undefined}
                     className={cn(
                       // Taller on mobile so fingers can hit the row reliably (≥44px).
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      collapsed && "lg:justify-center lg:gap-0 lg:px-0",
                       isActive
                         ? "bg-primary/10 text-primary"
                         : "text-slate-400 hover:bg-slate-800 hover:text-white",
                     )}
                   >
-                    <item.icon className="h-4 w-4" />
-                    <span className="flex-1">{item.label}</span>
-                    {item.beta && (
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {!collapsed && <span className="flex-1">{item.label}</span>}
+                    {!collapsed && item.beta && (
                       <span
                         aria-label="Beta feature"
                         className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
@@ -258,15 +294,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    title={collapsed ? item.label : undefined}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      collapsed && "lg:justify-center lg:gap-0 lg:px-0",
                       isActive
                         ? "bg-primary/10 text-primary"
                         : "text-slate-400 hover:bg-slate-800 hover:text-white",
                     )}
                   >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {!collapsed && item.label}
                   </Link>
                 </li>
               );
@@ -282,7 +320,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               match, so we hide it to avoid duplicating the user name
               below; for renamed or shared accounts it tells the user
               which account they're acting in. */}
-          {showAccountStrip && account?.name ? (
+          {!collapsed && showAccountStrip && account?.name ? (
             <div className="mb-2 flex items-center gap-2 px-3 text-xs text-slate-500">
               <UsersRound className="size-3.5 shrink-0" />
               {/* `title=` exposes the full name on hover when it
@@ -312,7 +350,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             </div>
           ) : null}
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none data-popup-open:bg-slate-800/60">
+            <DropdownMenuTrigger
+              title={collapsed ? (profile?.full_name ?? "Account") : undefined}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none data-popup-open:bg-slate-800/60",
+                collapsed && "lg:justify-center lg:px-0",
+              )}
+            >
               <Avatar className="size-8 shrink-0">
                 {profile?.avatar_url ? (
                   <AvatarImage
@@ -326,14 +370,16 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     "U"}
                 </AvatarFallback>
               </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {profile?.full_name ?? "User"}
-                </p>
-                <p className="truncate text-xs text-slate-400">
-                  {profile?.email ?? ""}
-                </p>
-              </div>
+              {!collapsed && (
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-white">
+                    {profile?.full_name ?? "User"}
+                  </p>
+                  <p className="truncate text-xs text-slate-400">
+                    {profile?.email ?? ""}
+                  </p>
+                </div>
+              )}
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"

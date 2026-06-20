@@ -601,7 +601,10 @@ async function processFromMeInbound(phoneId: string, remoteJid: string, message:
 
   const parsed = parseBaileysContent(message.message)
   const { contentType, contentText } = parsed
-  const mediaUrl = message._mediaUrl ?? parsed.mediaUrl
+  // Only the re-hosted Supabase URL is usable; the raw WhatsApp .enc CDN URL is
+  // encrypted/undecryptable, so never persist it — null renders a clean
+  // "unavailable" instead of a broken media player.
+  const mediaUrl = message._mediaUrl ?? null
   const ts = getTimestamp(messageTimestamp)
 
   await supabaseAdmin().from('messages').insert({
@@ -660,7 +663,10 @@ async function processFromMeGroupInbound(phoneId: string, groupJid: string, mess
 
   const parsed = parseBaileysContent(message.message)
   const { contentType, contentText } = parsed
-  const mediaUrl = message._mediaUrl ?? parsed.mediaUrl
+  // Only the re-hosted Supabase URL is usable; the raw WhatsApp .enc CDN URL is
+  // encrypted/undecryptable, so never persist it — null renders a clean
+  // "unavailable" instead of a broken media player.
+  const mediaUrl = message._mediaUrl ?? null
   const ts = getTimestamp(messageTimestamp)
 
   await supabaseAdmin().from('messages').insert({
@@ -780,7 +786,10 @@ async function processInbound(phoneId: string, message: BaileysMessage) {
   const contentText = parsed.contentText
   // Prefer the decrypted re-hosted URL from baileys-service over the
   // raw (encrypted, unusable) WhatsApp CDN URL.
-  const mediaUrl = message._mediaUrl ?? parsed.mediaUrl
+  // Only the re-hosted Supabase URL is usable; the raw WhatsApp .enc CDN URL is
+  // encrypted/undecryptable, so never persist it — null renders a clean
+  // "unavailable" instead of a broken media player.
+  const mediaUrl = message._mediaUrl ?? null
 
   // ── STOP / opt-out handler ────────────────────────────────────────────────
   if (contentType === 'text' && contentText && STOP_PATTERNS.test(contentText)) {
@@ -952,7 +961,7 @@ async function processGroupInbound(phoneId: string, groupJid: string, message: B
   const parsedGroup = parseBaileysContent(message.message)
   const contentType = parsedGroup.contentType
   const contentText = parsedGroup.contentText
-  const mediaUrl = message._mediaUrl ?? parsedGroup.mediaUrl
+  const mediaUrl = message._mediaUrl ?? null
   const ts = getTimestamp(messageTimestamp)
   const messageId = key.id ?? `baileys-${Date.now()}`
 
