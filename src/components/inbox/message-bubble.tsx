@@ -29,14 +29,17 @@ interface MessageBubbleProps {
 
 function StatusIcon({ status }: { status: Message["status"] }) {
   switch (status) {
+    // Ticks render only inside the outgoing bubble, so tint them with the
+    // bubble's own foreground (text-current) instead of a fixed slate — keeps
+    // ≥4:1 contrast on both the light-green and dark-green bubble surfaces.
     case "sending":
-      return <Clock className="h-3 w-3 text-slate-400" />;
+      return <Clock className="h-3 w-3 text-current opacity-60" />;
     case "sent":
-      return <Check className="h-3 w-3 text-slate-400" />;
+      return <Check className="h-3 w-3 text-current opacity-60" />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-slate-400" />;
+      return <CheckCheck className="h-3 w-3 text-current opacity-60" />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      return <CheckCheck className="h-3 w-3 text-chat-tick-read" />;
     case "failed":
       return <XCircle className="h-3 w-3 text-red-400" />;
     default:
@@ -281,8 +284,8 @@ export function MessageBubble({
           isNote
             ? "rounded-br-md border border-amber-700/40 bg-amber-950/60 text-amber-100"
             : isAgent
-              ? "rounded-br-md bg-primary text-primary-foreground"
-              : "rounded-bl-md bg-slate-800 text-slate-100",
+              ? "rounded-br-md bg-chat-bubble-out text-chat-bubble-out-foreground"
+              : "rounded-bl-md bg-chat-bubble-in text-chat-bubble-in-foreground",
         )}
       >
         {reply && (
@@ -295,7 +298,7 @@ export function MessageBubble({
             isAgent ? "justify-end" : "justify-start",
           )}
         >
-          <span className="text-[10px] text-white/60">{time}</span>
+          <span className="text-[10px] text-current opacity-55">{time}</span>
           {isAgent && !isNote && <StatusIcon status={message.status} />}
         </div>
       </div>

@@ -136,7 +136,8 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Closed", value: "closed", color: "text-slate-400" },
 ];
 
-const DOODLE_BG_CLASSES = "bg-slate-950";
+const DOODLE_BG_CLASSES =
+  "bg-chat-wallpaper bg-[url('/inbox-doodle.svg')] bg-repeat";
 
 /** Messages fetched per page; older pages load on scroll-to-top. */
 const PAGE_SIZE = 50;

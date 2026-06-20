@@ -14,6 +14,8 @@
  */
 
 export const THEME_IDS = [
+  "green",
+  "green-dark",
   "violet",
   "emerald",
   "cobalt",
@@ -24,7 +26,7 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "green";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -43,9 +45,21 @@ export interface ThemeMeta {
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
+    id: "green",
+    name: "Green",
+    tagline: "The default — clean WhatsApp-style messaging look.",
+    swatch: "#00a884",
+  },
+  {
+    id: "green-dark",
+    name: "Green Dark",
+    tagline: "The messaging look in dark — easy on the eyes at night.",
+    swatch: "#00a884",
+  },
+  {
     id: "violet",
     name: "Violet",
-    tagline: "The default — confident, slightly playful.",
+    tagline: "Confident and slightly playful.",
     swatch: "oklch(0.526 0.247 293)",
   },
   {

@@ -35,6 +35,12 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-chat-bubble-out: var(--chat-bubble-out);
+  --color-chat-bubble-out-foreground: var(--chat-bubble-out-foreground);
+  --color-chat-bubble-in: var(--chat-bubble-in);
+  --color-chat-bubble-in-foreground: var(--chat-bubble-in-foreground);
+  --color-chat-wallpaper: var(--chat-wallpaper);
+  --color-chat-tick-read: var(--chat-tick-read);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -106,6 +112,17 @@ html[data-theme="violet"] {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.28 0.01 260);
   --sidebar-ring: oklch(0.526 0.247 293);
+
+  /* Chat-surface tokens. Default = preserve each theme's existing look:
+     outgoing bubble = accent, incoming = card grey, wallpaper = deepest bg.
+     The WhatsApp ("green") themes below override these. All other themes
+     inherit these from :root and render exactly as before. */
+  --chat-bubble-out: var(--primary);
+  --chat-bubble-out-foreground: var(--primary-foreground);
+  --chat-bubble-in: var(--color-slate-800);
+  --chat-bubble-in-foreground: var(--color-slate-100);
+  --chat-wallpaper: var(--color-slate-950);
+  --chat-tick-read: #60a5fa; /* blue "read" double-tick (dark themes) */
 }
 
 html[data-theme="emerald"] {
@@ -317,6 +334,132 @@ html[data-theme="light"] {
   --color-slate-50:  oklch(0.18 0.012 260);
   /* Primary text: components use text-white for headings → make it dark */
   --color-white: oklch(0.21 0.01 260);
+}
+
+/* ============================================================
+ * "GREEN" — WhatsApp-style light theme (the DEFAULT look).
+ *
+ * Mirrors the `light` theme's slate-remap technique but with the
+ * WhatsApp Web palette: teal-green accent, grey panels, white/green
+ * chat bubbles on a beige wallpaper. Named neutrally ("Green") — the
+ * WhatsApp name is deliberately not used in UI.
+ * ============================================================ */
+html[data-theme="green"] {
+  /* Semantic tokens */
+  --background: #ffffff;
+  --foreground: #111b21;
+  --card: #ffffff;
+  --card-foreground: #111b21;
+  --popover: #ffffff;
+  --popover-foreground: #111b21;
+  --primary: #00a884;            /* WhatsApp teal-green accent */
+  --primary-foreground: #ffffff;
+  --primary-hover: #008f72;
+  --primary-soft: rgb(0 168 132 / 0.12);
+  --primary-soft-2: rgb(0 168 132 / 0.2);
+  --secondary: #f0f2f5;
+  --secondary-foreground: #111b21;
+  --muted: #f0f2f5;
+  --muted-foreground: #667781;
+  --accent: #f0f2f5;
+  --accent-foreground: #111b21;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #e9edef;
+  --input: #e9edef;
+  --ring: #00a884;
+  --chart-1: #00a884;
+  --radius: 0.625rem;
+  --sidebar: #f0f2f5;
+  --sidebar-foreground: #111b21;
+  --sidebar-primary: #00a884;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9edef;
+  --sidebar-accent-foreground: #111b21;
+  --sidebar-border: #e9edef;
+  --sidebar-ring: #00a884;
+
+  /* Palette remap — flips the hardcoded slate utilities to the WhatsApp
+     light surface ramp (panels white/grey, text dark). */
+  --color-slate-950: #ffffff;   /* deepest bg → white */
+  --color-slate-900: #ffffff;   /* panels → white */
+  --color-slate-800: #f0f2f5;   /* cards / inputs → panel grey */
+  --color-slate-700: #e9edef;   /* borders / hover */
+  --color-slate-600: #d1d7db;   /* dividers */
+  --color-slate-500: #667781;   /* muted text */
+  --color-slate-400: #54656f;   /* secondary text */
+  --color-slate-300: #3b4a54;   /* body text */
+  --color-slate-200: #2a3942;
+  --color-slate-100: #1d282f;
+  --color-slate-50:  #111b21;
+  --color-white: #111b21;       /* text-white headings → dark */
+
+  /* Chat surface */
+  --chat-bubble-out: #d9fdd3;            /* outgoing — WhatsApp light green */
+  --chat-bubble-out-foreground: #111b21;
+  --chat-bubble-in: #ffffff;             /* incoming — white */
+  --chat-bubble-in-foreground: #111b21;
+  --chat-wallpaper: #efeae2;             /* WhatsApp beige */
+  --chat-tick-read: #0284c7;             /* darker blue → 3.66:1 on #d9fdd3 */
+}
+
+/* ============================================================
+ * "GREEN DARK" — WhatsApp-style dark theme (selectable alternate).
+ * Dark grey-green surfaces with the same teal accent and the
+ * classic dark WhatsApp bubbles.
+ * ============================================================ */
+html[data-theme="green-dark"] {
+  --background: #0b141a;
+  --foreground: #e9edef;
+  --card: #111b21;
+  --card-foreground: #e9edef;
+  --popover: #233138;
+  --popover-foreground: #e9edef;
+  --primary: #00a884;
+  --primary-foreground: #ffffff;
+  --primary-hover: #06cf9c;
+  --primary-soft: rgb(0 168 132 / 0.18);
+  --primary-soft-2: rgb(0 168 132 / 0.28);
+  --secondary: #202c33;
+  --secondary-foreground: #e9edef;
+  --muted: #202c33;
+  --muted-foreground: #8696a0;
+  --accent: #202c33;
+  --accent-foreground: #e9edef;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #222d34;
+  --input: #2a3942;
+  --ring: #00a884;
+  --chart-1: #00a884;
+  --radius: 0.625rem;
+  --sidebar: #111b21;
+  --sidebar-foreground: #e9edef;
+  --sidebar-primary: #00a884;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #202c33;
+  --sidebar-accent-foreground: #e9edef;
+  --sidebar-border: #222d34;
+  --sidebar-ring: #00a884;
+
+  /* WhatsApp dark surface ramp */
+  --color-slate-950: #0b141a;
+  --color-slate-900: #111b21;
+  --color-slate-800: #202c33;
+  --color-slate-700: #2a3942;
+  --color-slate-600: #374248;
+  --color-slate-500: #667781;
+  --color-slate-400: #8696a0;
+  --color-slate-300: #aebac1;
+  --color-slate-200: #cfd9de;
+  --color-slate-100: #e9edef;
+  --color-slate-50:  #f0f2f5;
+  --color-white: #e9edef;
+
+  --chat-bubble-out: #005c4b;            /* outgoing — WhatsApp dark green */
+  --chat-bubble-out-foreground: #e9edef;
+  --chat-bubble-in: #202c33;             /* incoming — dark grey */
+  --chat-bubble-in-foreground: #e9edef;
+  --chat-wallpaper: #0b141a;
+  --chat-tick-read: #53bdeb;             /* light blue → 3.77:1 on #005c4b */
 }
 
 @layer base {

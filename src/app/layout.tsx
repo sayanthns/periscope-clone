@@ -32,8 +32,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
-  colorScheme: "dark",
+  themeColor: "#008069", // WhatsApp header green (matches default "green" theme)
+  colorScheme: "light",
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -89,13 +89,12 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <Toaster
-            theme="dark"
             position="top-right"
             toastOptions={{
               style: {
-                background: "rgb(30 41 59)",
-                border: "1px solid rgb(51 65 85)",
-                color: "white",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                color: "var(--card-foreground)",
               },
             }}
           />
