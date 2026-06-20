@@ -50,6 +50,9 @@ export async function POST(request: Request) {
     const body = await request.json()
     const phone: string = String(body.phone ?? '').replace(/\D/g, '')
     const text: string = String(body.text ?? '').trim()
+    // create_only: open/create the chat WITHOUT sending a first message —
+    // WhatsApp-Web behaviour when you click a contact from search.
+    const createOnly: boolean = body.create_only === true
     // Optional: which connected number to send from (multi-number).
     const fromNumber: string | null = body.phone_number_id ? String(body.phone_number_id) : null
 
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
-    if (!text) {
+    if (!text && !createOnly) {
       return NextResponse.json({ error: 'Message text is required' }, { status: 400 })
     }
 
@@ -133,6 +136,11 @@ export async function POST(request: Request) {
         )
       }
       conversationId = newConv.id
+    }
+
+    // create_only: chat exists/opened, nothing sent — return now.
+    if (createOnly) {
+      return NextResponse.json({ success: true, conversation_id: conversationId })
     }
 
     // Send via Baileys

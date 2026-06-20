@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { Conversation, ConversationStatus, ChatLabel } from "@/types";
+import type { Conversation, ConversationStatus, ChatLabel, Contact } from "@/types";
+import { useMaskedPhone } from "@/hooks/use-masked-phone";
 import { Search, ChevronDown, Users, SquarePen, Tag, Megaphone, Pin, BellOff, Smartphone } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,36 @@ export function ConversationList({
       setMsgMatchIds(
         new Set((data ?? []).map((r: { conversation_id: string }) => r.conversation_id)),
       );
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
+
+  // WhatsApp-Web-style search: also query the CONTACTS table so people with no
+  // open conversation surface (e.g. "siva"). Debounced 300ms, ≥3 chars, same
+  // shape as the message FTS above. RLS (is_account_member) scopes to account.
+  const [contactMatches, setContactMatches] = useState<Contact[]>([]);
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 3) {
+      setContactMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const supabase = createClient();
+      const term = `%${q}%`;
+      const { data } = await supabase
+        .from("contacts")
+        .select("id, user_id, phone, name, email, company, avatar_url, is_group, group_jid, created_at, updated_at")
+        .eq("is_group", false)
+        .or(`name.ilike.${term},phone.ilike.${term}`)
+        .order("name")
+        .limit(20);
+      if (cancelled) return;
+      setContactMatches((data ?? []) as Contact[]);
     }, 300);
     return () => {
       cancelled = true;
@@ -354,6 +385,45 @@ export function ConversationList({
       onSelect(conv);
     },
     [onSelect]
+  );
+
+  // "Contacts" search section: matched contacts NOT already shown as a chat
+  // (de-dup by contact_id). Only when the search box has a query.
+  const contactsOnly = useMemo(() => {
+    if (!search.trim()) return [];
+    const chatContactIds = new Set(filtered.map((c) => c.contact_id));
+    return contactMatches.filter((ct) => !chatContactIds.has(ct.id));
+  }, [search, filtered, contactMatches]);
+
+  // Clicking a contact with no chat → create/open one (no message sent) and
+  // select it, reusing the parent's onSelect (URL deep-link + unread reset).
+  const handleSelectContact = useCallback(
+    async (contact: Contact) => {
+      try {
+        const res = await fetch("/api/whatsapp/new-conversation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: contact.phone.replace(/\D/g, ""),
+            create_only: true,
+            ...(numberFilter ? { phone_number_id: numberFilter } : {}),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.conversation_id) return;
+        const supabase = createClient();
+        const { data: conv } = await supabase
+          .from("conversations")
+          .select("*, contact:contacts(*)")
+          .eq("id", data.conversation_id)
+          .maybeSingle();
+        setSearch("");
+        if (conv) onSelect(conv as Conversation);
+      } catch {
+        /* network error — no selection, search stays open */
+      }
+    },
+    [onSelect, numberFilter]
   );
 
   const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
@@ -671,24 +741,49 @@ export function ConversationList({
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && contactsOnly.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-slate-500">No conversations found</p>
           </div>
         ) : (
           <div className="flex flex-col">
-            {filtered.map((conv) => (
-              <ConversationItem
-                key={conv.id}
-                conversation={conv}
-                isActive={conv.id === activeConversationId}
-                onSelect={handleSelect}
-                itemLabels={(convLabels.get(conv.id) ?? [])
-                  .map((id) => labels.find((l) => l.id === id))
-                  .filter((l): l is ChatLabel => !!l)}
-                nowMs={nowMs}
-              />
-            ))}
+            {/* Section headers only when both Chats AND Contacts have hits
+                (WhatsApp-Web grouping). A chats-only result stays header-less. */}
+            {filtered.length > 0 && (
+              <>
+                {search.trim() && contactsOnly.length > 0 && (
+                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Chats
+                  </p>
+                )}
+                {filtered.map((conv) => (
+                  <ConversationItem
+                    key={conv.id}
+                    conversation={conv}
+                    isActive={conv.id === activeConversationId}
+                    onSelect={handleSelect}
+                    itemLabels={(convLabels.get(conv.id) ?? [])
+                      .map((id) => labels.find((l) => l.id === id))
+                      .filter((l): l is ChatLabel => !!l)}
+                    nowMs={nowMs}
+                  />
+                ))}
+              </>
+            )}
+            {search.trim() && contactsOnly.length > 0 && (
+              <>
+                <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Contacts
+                </p>
+                {contactsOnly.map((ct) => (
+                  <ContactResultItem
+                    key={ct.id}
+                    contact={ct}
+                    onSelect={handleSelectContact}
+                  />
+                ))}
+              </>
+            )}
           </div>
         )}
       </ScrollArea>
@@ -815,6 +910,50 @@ function ConversationItem({
             />
           </div>
         </div>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Search result for a contact that has NO open conversation. Clicking it
+ * creates/opens a chat (WhatsApp-Web behaviour). Mirrors ConversationItem's
+ * avatar + name layout, minus last-message / unread / status.
+ */
+function ContactResultItem({
+  contact,
+  onSelect,
+}: {
+  contact: Contact;
+  onSelect: (contact: Contact) => void;
+}) {
+  const { maskPhone } = useMaskedPhone();
+  const displayName = contact.name || contact.phone || "Unknown";
+  const initials = displayName.charAt(0).toUpperCase();
+
+  return (
+    <button
+      onClick={() => onSelect(contact)}
+      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-800/50"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-medium text-white">
+        {contact.avatar_url ? (
+          <img
+            src={contact.avatar_url}
+            alt={displayName}
+            className="h-10 w-10 rounded-full object-cover"
+          />
+        ) : (
+          initials
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-white">
+          {displayName}
+        </span>
+        <span className="block truncate text-xs text-slate-500">
+          {maskPhone(contact.phone)}
+        </span>
       </div>
     </button>
   );
