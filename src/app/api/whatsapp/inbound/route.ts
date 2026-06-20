@@ -362,9 +362,15 @@ async function findOrCreateContact(accountId: string, userId: string, phone: str
   const existing = candidates?.find((c: any) => phonesMatch(c.phone, phone))
 
   if (existing) {
-    if (name && name !== existing.name) {
+    // Only UPGRADE the name. `name` is `pushName || phone`, so a message that
+    // arrives without a pushName carries the bare number — never let that
+    // overwrite a real saved name. Accept an incoming real (non-numeric) name,
+    // and backfill it onto a contact still showing only its number.
+    const isRealName = !!name && name !== phone && name.replace(/\D/g, '') !== normalizedSender
+    if (isRealName && name !== existing.name) {
       await supabaseAdmin().from('contacts')
         .update({ name, updated_at: new Date().toISOString() }).eq('id', existing.id)
+      existing.name = name
     }
     return { contact: existing, wasCreated: false }
   }
@@ -593,7 +599,9 @@ async function processFromMeInbound(phoneId: string, remoteJid: string, message:
     .eq('conversation_id', conv.id).eq('message_id', messageId)
   if ((existing ?? 0) > 0) return
 
-  const { contentType, contentText } = parseBaileysContent(message.message)
+  const parsed = parseBaileysContent(message.message)
+  const { contentType, contentText } = parsed
+  const mediaUrl = message._mediaUrl ?? parsed.mediaUrl
   const ts = getTimestamp(messageTimestamp)
 
   await supabaseAdmin().from('messages').insert({
@@ -601,6 +609,7 @@ async function processFromMeInbound(phoneId: string, remoteJid: string, message:
     sender_type: 'agent',
     content_type: contentType,
     content_text: contentText,
+    media_url: mediaUrl,
     message_id: messageId,
     status: 'sent',
     created_at: new Date(ts * 1000).toISOString(),
@@ -649,7 +658,9 @@ async function processFromMeGroupInbound(phoneId: string, groupJid: string, mess
     .eq('conversation_id', conv.id).eq('message_id', messageId)
   if ((existing ?? 0) > 0) return
 
-  const { contentType, contentText } = parseBaileysContent(message.message)
+  const parsed = parseBaileysContent(message.message)
+  const { contentType, contentText } = parsed
+  const mediaUrl = message._mediaUrl ?? parsed.mediaUrl
   const ts = getTimestamp(messageTimestamp)
 
   await supabaseAdmin().from('messages').insert({
@@ -657,6 +668,7 @@ async function processFromMeGroupInbound(phoneId: string, groupJid: string, mess
     sender_type: 'agent',
     content_type: contentType,
     content_text: contentText,
+    media_url: mediaUrl,
     message_id: messageId,
     status: 'sent',
     created_at: new Date(ts * 1000).toISOString(),
