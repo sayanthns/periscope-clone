@@ -28,7 +28,10 @@ export type ThemeId = (typeof THEME_IDS)[number];
 
 export const DEFAULT_THEME: ThemeId = "green";
 
-export const STORAGE_KEY = "wacrm.theme";
+// Bumped to ".v2" to force a one-time migration: the WhatsApp-style "green"
+// theme is the new default, so we ignore every previously-saved pick once and
+// let everyone land on green. Future picks persist under this new key.
+export const STORAGE_KEY = "wacrm.theme.v2";
 
 export interface ThemeMeta {
   id: ThemeId;
