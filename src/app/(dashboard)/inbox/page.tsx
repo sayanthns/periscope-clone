@@ -38,6 +38,8 @@ export default function InboxPage() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+  // Right contact-info panel visibility (WhatsApp-Web: toggle with the header icon)
+  const [showInfo, setShowInfo] = useState(true);
 
   // Fire the deep-link auto-select exactly once per URL — subsequent
   // list refreshes (realtime, manual refetch) must not snap the user
@@ -575,13 +577,17 @@ export default function InboxPage() {
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
+            onToggleInfo={() => setShowInfo((v) => !v)}
+            infoOpen={showInfo}
           />
         </div>
 
-        {/* Right panel: Contact sidebar — desktop only. */}
-        <div className="hidden lg:block">
-          <ContactSidebar contact={activeContact} conversation={activeConversation} />
-        </div>
+        {/* Right panel: Contact sidebar — desktop only, toggleable. */}
+        {showInfo && (
+          <div className="hidden lg:block">
+            <ContactSidebar contact={activeContact} conversation={activeConversation} />
+          </div>
+        )}
       </div>
     </div>
   );

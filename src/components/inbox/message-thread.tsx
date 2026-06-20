@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   RefreshCw,
   MoreVertical,
+  PanelRight,
   Pin,
   PinOff,
   BellOff,
@@ -104,6 +105,9 @@ interface MessageThreadProps {
    * working; the button is only rendered when this is provided.
    */
   onRefresh?: () => void;
+  /** Toggle the right contact-info panel (WhatsApp-Web style). */
+  onToggleInfo?: () => void;
+  infoOpen?: boolean;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -152,6 +156,8 @@ export function MessageThread({
   onStatusChange,
   onAssignChange,
   onBack,
+  onToggleInfo,
+  infoOpen,
   resyncToken = 0,
   onRefresh,
 }: MessageThreadProps) {
@@ -1055,6 +1061,20 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+          {onToggleInfo && (
+            <button
+              type="button"
+              onClick={onToggleInfo}
+              aria-label="Toggle contact info panel"
+              title={infoOpen ? "Hide details" : "Show details"}
+              className={cn(
+                "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-slate-800 hover:text-white lg:inline-flex",
+                infoOpen ? "text-primary" : "text-slate-400",
+              )}
+            >
+              <PanelRight className="h-3.5 w-3.5" />
             </button>
           )}
 

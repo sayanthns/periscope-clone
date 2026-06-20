@@ -114,6 +114,11 @@ export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<Meta
   })
   if (!res.ok) await throwBaileysError(res, `Baileys send-media failed: ${res.status}`)
 
+  // Prefer the real WA message id so the fromMe echo dedups (no double-insert).
+  try {
+    const data = (await res.json()) as { messageId?: string | null }
+    if (data.messageId) return { messageId: data.messageId }
+  } catch { /* fall through */ }
   return { messageId: `baileys-${Date.now()}` }
 }
 
