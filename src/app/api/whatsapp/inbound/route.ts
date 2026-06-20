@@ -545,6 +545,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'phoneId and message.key required' }, { status: 400 })
   }
 
+  // Ignore WhatsApp Status / story broadcasts — not support conversations.
+  // (baileys-service drops these too; this also catches history-sync replays.)
+  const rjid: string | null | undefined = message.key.remoteJid
+  if (rjid === 'status@broadcast' || rjid?.endsWith('@broadcast')) {
+    return NextResponse.json({ ok: true, skipped: 'status_broadcast' })
+  }
+
   // Process async so we ack baileys-service immediately
   processInbound(phoneId, message).catch((err) =>
     console.error('[inbound] processInbound error:', err)
